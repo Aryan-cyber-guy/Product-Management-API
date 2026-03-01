@@ -4,6 +4,7 @@ from database import session,engine
 import db_models
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
+import os
 
 app = FastAPI()
 app.add_middleware(
@@ -82,8 +83,6 @@ def delete_product(id:int,db: Session = Depends(get_db)):
         db.commit()
         return db_product
     return "Product not found"
-
-import os
 
 if __name__ == "__main__":
     import uvicorn

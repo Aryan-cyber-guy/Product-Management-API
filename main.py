@@ -1,12 +1,14 @@
-from fastapi import Depends,FastAPI
-from models import Products
+from fastapi import Depends,FastAPI, HTTPException
+from models import Products, ProductCreate, ProductUpdate
 from database import session,engine
 import db_models
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 import os
+from contextlib import asynccontextmanager
 
 app = FastAPI()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,14 +20,7 @@ app.add_middleware(
 db_models.Base.metadata.create_all(bind=engine)
 @app.get("/")
 def greet():
-    return "Hello every nyaan"
-
-products = [
-    Products(id=1,name="Laptop",description="A laptop pc",price=899,quantity=5),
-    Products(id=2,name="Phone",quantity=2,description="Smart Phone",price=999),
-    Products(id=3,name="TV",quantity=8,description="OLED",price=1299),
-    Products(id=5,name="Tablet",quantity=2,description="Nice one",price=899)
-]
+    return "Server is running"
 
 def get_db():
     db = session()
@@ -34,55 +29,53 @@ def get_db():
     finally:
         db.close()
 
-def init_db():
-    db = session()
-    count = db.query(db_models.Products).count()
-    if count==0:
-        for product in products:
-            db.add(db_models.Products(**product.model_dump()))
-        db.commit()
-
-init_db()
-
-@app.get("/products")
+@app.get("/products", response_model=list[Products])
 def all_products(db: Session = Depends(get_db)):
-    db_products = db.query(db_models.Products).all()
+    db_products = db.query(db_models.ProductSchema).all()
     return db_products
 
-@app.get("/products/{id}")
+@app.get("/products/{id}", response_model=Products)
 def product(id:int,db: Session = Depends(get_db)):
-    db_product = db.query(db_models.Products).filter(db_models.Products.id == id).first()
+    db_product = db.query(db_models.ProductSchema).filter(db_models.ProductSchema.id == id).first()
     if db_product:
         return db_product
-    return "Product not found"
+    raise HTTPException(status_code=404, detail="Product not found")
 
-@app.post("/products")
-def add_product(product: Products,db: Session = Depends(get_db)):
-    db.add(db_models.Products(**product.model_dump()))
+@app.post("/products", response_model=Products)
+def add_product(product: ProductCreate, db: Session = Depends(get_db)):
+    db_product = db_models.ProductSchema(**product.model_dump())
+
+    db.add(db_product)
     db.commit()
-    return product
+    db.refresh(db_product)
 
-@app.put("/products/{id}")
-def update_product(id:int ,product: Products,db: Session = Depends(get_db)):
-    db_product = db.query(db_models.Products).filter(db_models.Products.id == id).first()
-    if db_product:
-        db_product.name = product.name
-        db_product.price = product.price
-        db_product.description = product.description
-        db_product.quantity = product.quantity
-        db.commit()
-        db.refresh(db_product)
-        return db_product
-    return {"error":"Product not found"}
+    return db_product
+
+@app.put("/products/{id}", response_model=Products)
+def update_product(id: int, product: ProductUpdate, db: Session = Depends(get_db)):
+    db_product = db.query(db_models.ProductSchema).filter(db_models.ProductSchema.id == id).first()
+
+    if not db_product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    update_data = product.model_dump(exclude_unset=True)
+
+    for field, value in update_data.items():
+        setattr(db_product, field, value)
+
+    db.commit()
+    db.refresh(db_product)
+
+    return db_product
 
 @app.delete("/products/{id}")
-def delete_product(id:int,db: Session = Depends(get_db)):
-    db_product = db.query(db_models.Products).filter(db_models.Products.id == id).first()
+def delete_product(id:int, db: Session = Depends(get_db)):
+    db_product = db.query(db_models.ProductSchema).filter(db_models.ProductSchema.id == id).first()
     if db_product:
         db.delete(db_product)
         db.commit()
         return db_product
-    return "Product not found"
+    raise HTTPException(status_code=404, detail="Product not found")
 
 if __name__ == "__main__":
     import uvicorn
